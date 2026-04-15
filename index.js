@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
 const twilio = require('twilio');
@@ -8,6 +9,12 @@ const { MessagingResponse } = twilio.twiml;
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Ensure temp directory exists
+const tempDir = path.join(__dirname, 'temp');
+if (!fs.existsSync(tempDir)) {
+  fs.mkdirSync(tempDir);
+}
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -38,39 +45,49 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
   res.type('text/xml').send(twiml.toString());
 });
 
-// Media serving endpoint for Twilio
+// Media serving endpoint for Twilio (Fixed 0-byte issue with temp files)
 app.get('/api/media', async (req, res) => {
   const { url: websiteUrl, format } = req.query;
   const ytdlpPath = path.join(__dirname, 'bin', 'yt-dlp');
+  const tempFileId = `tw_${Date.now()}`;
+  const tempFilePath = path.join(tempDir, tempFileId);
   
   const args = [
     '--ffmpeg-location', ffmpegPath,
-    '-o', '-', 
+    '-o', tempFilePath, 
     '--no-playlist',
     '--no-warnings'
   ];
 
   if (format === 'mp3') {
+    // Force MP3 extraction
     args.push('-f', 'bestaudio', '--extract-audio', '--audio-format', 'mp3');
-    res.set('Content-Type', 'audio/mpeg');
   } else {
     // 480p is a good compromise for WhatsApp 16MB limit
     args.push('-f', 'bestvideo[height<=480]+bestaudio/best[height<=480]', '--merge-output-format', 'mp4');
-    res.set('Content-Type', 'video/mp4');
   }
 
   args.push(websiteUrl);
 
   const ytdlp = spawn(ytdlpPath, args);
-  ytdlp.stdout.pipe(res);
 
-  ytdlp.stderr.on('data', (data) => {
-    console.error(`yt-dlp stderr: ${data}`);
+  ytdlp.on('close', (code) => {
+    const finalExt = format === 'mp3' ? '.mp3' : '.mp4';
+    const filePath = tempFilePath + finalExt;
+
+    if (fs.existsSync(filePath)) {
+      res.sendFile(filePath, (err) => {
+        // Cleanup
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+      });
+    } else {
+      console.error(`Media creation failed with code ${code}`);
+      res.status(500).send('Processing failed');
+    }
   });
 
-  req.on('close', () => {
-    ytdlp.kill();
-  });
+  ytdlp.stderr.on('data', (data) => console.error(`yt-dlp: ${data}`));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
