@@ -1,0 +1,15 @@
+{
+  "name": "whatsapp-media-bot",
+  "version": "1.0.0",
+  "description": "WhatsApp Bot for YouTube Media Downloads",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "twilio": "^5.13.1"
+  }
+}
