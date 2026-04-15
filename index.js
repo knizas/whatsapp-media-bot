@@ -18,7 +18,8 @@ async function getYTSession() {
   if (ytSession) return ytSession;
   ytSession = await Innertube.create({
     cache: new UniversalCache(false),
-    generate_session_store: true
+    generate_session_store: true,
+    client_type: 'ANDROID'
   });
   return ytSession;
 }
